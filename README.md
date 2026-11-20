@@ -45,3 +45,4 @@ Nie pobiera dźwięku ani nie omija ograniczeń pobierania.
 - Strona internetowa nie może zmieniać głośności ani basu całego urządzenia lub innych aplikacji. Efekty działają wyłącznie na dźwięku odtwarzanym wewnątrz strony.
 - Premium ma docelowo odblokować płynniejsze przetwarzanie i Bass Boost do 250%. Obecnie płatności i weryfikacja Premium nie są podłączone; nie należy traktować samego wyglądu jako aktywnej subskrypcji.
 - Dla bezpieczeństwa wzmocnienie basu jest ograniczane filtrem EQ, a nie prostym mnożeniem głośności. Wysokie ustawienia pokazują ostrzeżenie.
+\n\n### Naprawa własnych plików\nWybór pliku pokazuje teraz natywny selektor plików przeglądarki, obsługuje typowe formaty audio także wtedy, gdy przeglądarka nie zwróci MIME type, a jeśli Web Audio nie jest dostępne, nadal próbuje odtworzyć plik zwykłym odtwarzaczem.\n

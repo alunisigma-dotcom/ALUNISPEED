@@ -35,7 +35,8 @@
         <p class="eyebrow">LOCAL MUSIC</p>
         <h2>Dodaj własny plik audio</h2>
         <p class="muted">Wybierz plik audio z urządzenia. Możesz regulować tempo i bas podczas odtwarzania w ALUNISPEED.</p>
-        <label class="button file-label">Wybierz plik audio<input id="audio-file" type="file" accept="audio/*"></label>
+        <label class="button file-label" for="audio-file">Wybierz plik audio</label>
+        <input id="audio-file" class="audio-file-input" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus">
         <p id="player-message" class="message" aria-live="polite"></p>
       </section>
       <section class="player-layout">

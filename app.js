@@ -67,21 +67,62 @@
   $("speed-range").addEventListener("input",e=>{const v=Number(e.target.value);$("speed-value").textContent=v.toFixed(2)+"×";$("audio-player").playbackRate=v;});
   document.querySelectorAll("[data-speed]").forEach(b=>b.addEventListener("click",()=>{$("speed-range").value=b.dataset.speed;$("speed-range").dispatchEvent(new Event("input"));}));
 
-  $("audio-file").addEventListener("change",async e=>{
-    const file=e.target.files[0];if(!file)return;
-    if(!file.type.startsWith("audio/")){msg("player-message","Wybierz plik audio.",true);return;}
-    stopLocal();
-    localUrl=URL.createObjectURL(file);$("audio-player").src=localUrl;
-    $("track-title").textContent=file.name;$("source-pill").textContent="LOCAL AUDIO";
-    $("embed-container").classList.add("hidden");$("local-controls").classList.remove("hidden");
-    $("speed-range").value=1;$("speed-range").dispatchEvent(new Event("input"));
-    $("bass-range").value=0;setBass(0);
-    try{await setupAudioGraph();await $("audio-player").play();msg("player-message","Plik gotowy. Możesz regulować tempo i bas.");}
-    catch(err){msg("player-message","Przeglądarka nie uruchomiła odtwarzania automatycznie. Naciśnij Play.",true);}
+  $("audio-file").addEventListener("change", async e=>{
+    const file=e.target.files && e.target.files[0];
+    if(!file) return;
+
+    const looksLikeAudio = file.type.startsWith("audio/") ||
+      /\\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(file.name);
+    if(!looksLikeAudio){
+      msg("player-message","Ten plik nie wygląda na plik audio. Wybierz MP3, WAV, OGG, M4A, AAC, FLAC lub OPUS.",true);
+      e.target.value="";
+      return;
+    }
+
+    const audio=$("audio-player");
+    try{
+      stopLocal();
+      localUrl=URL.createObjectURL(file);
+      audio.src=localUrl;
+      audio.load();
+
+      $("track-title").textContent=file.name;
+      $("source-pill").textContent="LOCAL AUDIO";
+      $("embed-container").classList.add("hidden");
+      $("local-controls").classList.remove("hidden");
+      $("speed-range").value="1";
+      $("speed-value").textContent="1.00×";
+      audio.playbackRate=1;
+      $("bass-range").value="0";
+      $("bass-value").textContent="0%";
+      $("bass-warning").classList.add("hidden");
+
+      // Build the Web Audio graph only once. If Web Audio is unavailable,
+      // native audio playback still works.
+      try{
+        await setupAudioGraph();
+      }catch(graphError){
+        console.warn("Audio effects unavailable; using native playback.",graphError);
+      }
+
+      try{
+        await audio.play();
+        msg("player-message","Plik załadowany i odtwarzany. Jeśli nie słyszysz dźwięku, sprawdź głośność i Play.");
+      }catch(playError){
+        msg("player-message","Plik został załadowany. Naciśnij Play w odtwarzaczu, aby rozpocząć.",false);
+      }
+    }catch(err){
+      console.error(err);
+      msg("player-message","Nie udało się załadować tego pliku. Spróbuj MP3 lub WAV.",true);
+    }
   });
-  $("premium-info-btn").addEventListener("click",()=>{
-    msg("premium-message","Premium za 1 zł/miesiąc będzie odblokowywać rozszerzony Bass Boost do 250% i dodatkowe przetwarzanie audio. Płatności i weryfikacja subskrypcji nie są jeszcze podłączone.");
-  });
+  const premiumInfoButton=$("premium-info-btn");
+  if(premiumInfoButton){
+    premiumInfoButton.addEventListener("click",()=>{
+      const premiumMessage=$("premium-message");
+      if(premiumMessage) msg("premium-message","Premium i płatności nie są jeszcze aktywne. Na razie działa odtwarzanie własnych plików audio.");
+    });
+  }
 
   if(db){
     db.auth.getSession().then(({data})=>{user=data.session?.user||null;setUser();});
