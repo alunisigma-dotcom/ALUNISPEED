@@ -24,3 +24,6 @@ for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 -- To jest schemat startowy. Limit 15/dzień, Premium i jednorazowy kod
 -- ALUNISTAR244 muszą być egzekwowane po stronie serwera (Edge Function),
 -- a nie samym JavaScriptem w przeglądarce.
+
+-- Migration: playlist_id is optional for a simple saved library.
+alter table public.saved_tracks alter column playlist_id drop not null;
