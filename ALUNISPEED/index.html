@@ -16,6 +16,7 @@
       <button class="nav-btn active" data-view="home">♫ <span>Odtwarzacz</span></button>
       <button class="nav-btn" data-view="library">▣ <span>Biblioteka</span></button>
       <button class="nav-btn" data-view="playlists">▤ <span>Playlisty</span></button>
+      <button class="nav-btn" data-view="import">⇩ <span>Import Music</span></button>
     </nav>
     <div class="side-note"><strong>FREE</strong><p>Limit: 15 utworów dziennie (do skonfigurowania w backendzie).</p></div>
     <div class="account"><div id="user-label">Niezalogowano</div><button id="logout-btn" class="ghost hidden">Wyloguj</button></div>
@@ -54,6 +55,16 @@
     </section>
     <section id="library-view" class="view hidden"><div class="page-heading"><p class="eyebrow">YOUR COLLECTION</p><h1>Biblioteka</h1></div><div id="library-list" class="panel list">Zaloguj się, aby zobaczyć bibliotekę.</div></section>
     <section id="playlists-view" class="view hidden"><div class="page-heading"><p class="eyebrow">MAKE YOUR MIX</p><h1>Playlisty</h1></div><div class="panel create-playlist"><input id="playlist-name" maxlength="60" placeholder="Nazwa nowej playlisty"><button id="create-playlist-btn" class="button">＋ Utwórz playlistę</button></div><div id="playlist-list" class="playlist-grid"></div></section>
+    <section id="import-view" class="view hidden">
+      <div class="page-heading"><p class="eyebrow">BRING YOUR MUSIC</p><h1>Import Music</h1></div>
+      <div class="panel">
+        <h2>Dodaj utwór z linku</h2>
+        <p class="muted">Wklej link do Spotify, YouTube lub SoundCloud. ALUNISPEED otworzy oficjalny odtwarzacz, jeśli dany serwis pozwala na osadzanie.</p>
+        <div class="input-row"><input id="import-url" type="url" placeholder="Wklej link do utworu"><button id="import-btn" class="button">Importuj utwór</button></div>
+        <p id="import-message" class="message" aria-live="polite"></p>
+        <p class="muted tiny">Import oznacza dodanie linku do odtwarzacza/biblioteki, a nie pobieranie pliku MP3. Nie pobieramy utworów z serwisów bez zgody właściciela praw.</p>
+      </div>
+    </section>
     <footer>ALUNISPEED • Projekt demonstracyjny. Korzystaj z muzyki zgodnie z prawami autorskimi i regulaminami serwisów.</footer>
   </main>
 </div>

@@ -39,7 +39,7 @@
     $("playlist-list").innerHTML=playlists.length?playlists.map(p=>`<article class="playlist-card"><h3>${escapeHtml(p.name)}</h3><p>Twoja playlista</p></article>`).join(""):"<p class='muted'>Nie masz jeszcze playlist.</p>";
   }
   function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-  document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>{["home","library","playlists"].forEach(v=>$(v+"-view").classList.toggle("hidden",v!==b.dataset.view));document.querySelectorAll(".nav-btn").forEach(x=>x.classList.toggle("active",x===b));}));
+  document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>{["home","library","playlists","import"].forEach(v=>$(v+"-view").classList.toggle("hidden",v!==b.dataset.view));document.querySelectorAll(".nav-btn").forEach(x=>x.classList.toggle("active",x===b));}));
 
   function parseUrl(raw){
     let u;try{u=new URL(raw);}catch{throw Error("Wklej poprawny link https://");}
@@ -84,6 +84,17 @@
   $("add-link-btn").addEventListener("click",()=>{
     try{const t=parseUrl($("track-url").value.trim());showEmbed(t);}
     catch(e){msg("player-message",e.message,true);}
+  });
+  $("import-btn").addEventListener("click",()=>{
+    try{
+      const t=parseUrl($("import-url").value.trim());
+      $("track-url").value=t.url;
+      showEmbed(t);
+      msg("import-message","Link rozpoznany i otwarty w odtwarzaczu. Możesz wrócić do Odtwarzacza.");
+      $("import-url").value="";
+      ["home","library","playlists","import"].forEach(v=>$(v+"-view").classList.toggle("hidden",v!=="home"));
+      document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view==="home"));
+    }catch(e){msg("import-message",e.message,true);}
   });
 
   async function setupAudioGraph(){
