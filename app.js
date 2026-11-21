@@ -5,7 +5,9 @@
   const configured = /^https:\/\/.+\.supabase\.co$/.test(cfg.SUPABASE_URL || "") && !!cfg.SUPABASE_ANON_KEY && !String(cfg.SUPABASE_ANON_KEY).includes("YOUR_PUBLIC_KEY");
   const db = configured && window.supabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   let user = null, isOwner = false, isPremium = false, localUrl = null, activePlaylistId = null, notificationChannel = null;
-  let audioCtx = null, bassFilter = null, mediaSource = null, compressor = null;
+  let audioCtx = null, bassFilter = null, eqLowFilter = null, midFilter = null, trebleFilter = null, mediaSource = null, compressor = null;
+  let musicQueue = [], currentQueueIndex = -1, repeatMode = 0;
+  const STATS_KEY = "alunispeed_music_stats_v1";
   const inlineAudioGraphs = new WeakMap();
   const bassGainDb = value => (Math.min(Number(value) || 0, isPremium ? 250 : 75) / (isPremium ? 250 : 75)) * (isPremium ? 24 : 18);
 
@@ -126,9 +128,12 @@
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       bassFilter = audioCtx.createBiquadFilter(); bassFilter.type = "lowshelf"; bassFilter.frequency.value = 120;
+      eqLowFilter = audioCtx.createBiquadFilter(); eqLowFilter.type = "peaking"; eqLowFilter.frequency.value = 80; eqLowFilter.Q.value = 0.8;
+      midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000; midFilter.Q.value = 0.8;
+      trebleFilter = audioCtx.createBiquadFilter(); trebleFilter.type = "highshelf"; trebleFilter.frequency.value = 5000;
       compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -18; compressor.knee.value = 18; compressor.ratio.value = 2.5;
       mediaSource = audioCtx.createMediaElementSource(audio);
-      mediaSource.connect(bassFilter); bassFilter.connect(compressor); compressor.connect(audioCtx.destination);
+      mediaSource.connect(bassFilter); bassFilter.connect(eqLowFilter); eqLowFilter.connect(midFilter); midFilter.connect(trebleFilter); trebleFilter.connect(compressor); compressor.connect(audioCtx.destination);
     }
     if (audioCtx.state === "suspended") await audioCtx.resume();
   }
@@ -138,6 +143,87 @@
     if (bassFilter && audioCtx) bassFilter.gain.setTargetAtTime((v / max) * (isPremium ? 24 : 18), audioCtx.currentTime, .08);
     $("bass-warning").classList.toggle("hidden", v <= 75);
   }
+  function applyEqualizer() {
+    const values = [["eq-low", eqLowFilter, "eq-low-value"], ["eq-mid", midFilter, "eq-mid-value"], ["eq-high", trebleFilter, "eq-high-value"]];
+    for (const [id, filter, label] of values) {
+      const value = Number($(id).value);
+      $(label).textContent = value + " dB";
+      if (filter && audioCtx) filter.gain.setTargetAtTime(value, audioCtx.currentTime, .06);
+    }
+  }
+  ["eq-low", "eq-mid", "eq-high"].forEach(id => $(id).addEventListener("input", applyEqualizer));
+  $("eq-reset").addEventListener("click", () => {
+    ["eq-low", "eq-mid", "eq-high"].forEach(id => { $(id).value = 0; });
+    applyEqualizer();
+  });
+  function renderQueue() {
+    $("queue-count").textContent = musicQueue.length;
+    $("queue-list").innerHTML = musicQueue.length
+      ? musicQueue.map((item, i) => `<button class="queue-item ${i === currentQueueIndex ? "current" : ""}" type="button" data-queue-index="${i}"><span>${i === currentQueueIndex ? "♫" : (i + 1) + "."}</span>${esc(item.name)}</button>`).join("")
+      : '<p class="muted tiny">Kolejka jest pusta. Dodaj kilka plików audio.</p>';
+    document.querySelectorAll("[data-queue-index]").forEach(button => button.addEventListener("click", () => playQueueIndex(Number(button.dataset.queueIndex))));
+  }
+  function setRepeatMode(mode) {
+    repeatMode = mode;
+    const labels = ["↻ Powtarzanie: wyłączone", "↻ Powtarzanie: wszystko", "↻ Powtarzanie: jeden"];
+    $("repeat-mode").textContent = labels[repeatMode];
+    $("repeat-mode").classList.toggle("selected", repeatMode !== 0);
+  }
+  $("repeat-mode").addEventListener("click", () => setRepeatMode((repeatMode + 1) % 3));
+  $("queue-toggle").addEventListener("click", () => $("queue-panel").classList.toggle("hidden"));
+  async function playQueueIndex(index) {
+    if (index < 0 || index >= musicQueue.length) return;
+    currentQueueIndex = index;
+    const item = musicQueue[index];
+    await playUrl(item.url, item.name, 0, null);
+    $("source-pill").textContent = "LOCAL AUDIO";
+    renderQueue();
+  }
+  $("audio-player").addEventListener("ended", async () => {
+    if (repeatMode === 2 && currentQueueIndex >= 0) {
+      const audio = $("audio-player"); audio.currentTime = 0;
+      try { await audio.play(); } catch (_) {}
+      return;
+    }
+    const next = currentQueueIndex + 1;
+    if (next < musicQueue.length) await playQueueIndex(next);
+    else if (repeatMode === 1 && musicQueue.length) await playQueueIndex(0);
+  });
+  const readStats = () => { try { return JSON.parse(localStorage.getItem(STATS_KEY) || "{}"); } catch (_) { return {}; } };
+  function updateMusicStats() {
+    const stats = readStats(), cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 6);
+    const days = Object.entries(stats).filter(([day]) => new Date(day + "T00:00:00") >= cutoff);
+    const seconds = days.reduce((sum, [, value]) => sum + (value.seconds || 0), 0);
+    const plays = days.reduce((sum, [, value]) => sum + (value.plays || 0), 0);
+    const tracks = {};
+    days.forEach(([, value]) => Object.entries(value.tracks || {}).forEach(([name, count]) => tracks[name] = (tracks[name] || 0) + count));
+    const top = Object.entries(tracks).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+    $("stats-time").textContent = Math.floor(seconds / 60) + " min";
+    $("stats-plays").textContent = plays;
+    $("stats-top").textContent = top.length > 22 ? top.slice(0, 19) + "…" : top;
+  }
+  function recordPlay(name) {
+    const stats = readStats(), day = new Date().toISOString().slice(0, 10);
+    stats[day] ||= { seconds: 0, plays: 0, tracks: {} };
+    stats[day].plays++; stats[day].tracks[name] = (stats[day].tracks[name] || 0) + 1;
+    try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (_) {}
+    updateMusicStats();
+  }
+  $("audio-player").addEventListener("play", () => recordPlay($("track-title").textContent));
+  let lastStatsPosition = 0;
+  $("audio-player").addEventListener("timeupdate", () => {
+    const audio = $("audio-player"), delta = audio.currentTime - lastStatsPosition;
+    if (!audio.paused && delta > 0 && delta <= 3) {
+      const stats = readStats(), day = new Date().toISOString().slice(0, 10);
+      stats[day] ||= { seconds: 0, plays: 0, tracks: {} };
+      stats[day].seconds += delta;
+      try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (_) {}
+      updateMusicStats();
+    }
+    lastStatsPosition = audio.currentTime;
+  });
+  updateMusicStats();
+  setRepeatMode(0);
   $("bass-range").addEventListener("input", e => applyBass(e.target.value));
   $("speed-range").addEventListener("input", e => { const v = Number(e.target.value); $("speed-value").textContent = v.toFixed(2) + "×"; $("audio-player").playbackRate = v; });
   document.querySelectorAll("[data-speed]").forEach(b => b.addEventListener("click", () => { $("speed-range").value = b.dataset.speed; $("speed-range").dispatchEvent(new Event("input")); }));
@@ -161,7 +247,7 @@
     audio.playbackRate = 1;
     $("bass-range").value = String(bass);
     // Audio effects are optional: failure to create Web Audio must not prevent normal playback.
-    try { await setupAudioGraph(); applyBass(bass); }
+    try { await setupAudioGraph(); applyBass(bass); applyEqualizer(); }
     catch (effectError) { console.warn("Efekty audio niedostępne; odtwarzam bez EQ.", effectError); }
     try {
       await audio.play();
@@ -172,23 +258,26 @@
     }
   }
   $("audio-file").addEventListener("change", async e => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!(file.type.startsWith("audio/") || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(file.name))) {
-      msg("player-message", "Wybierz plik audio (MP3, WAV, OGG, M4A lub FLAC).", true);
+    const files = [...(e.target.files || [])];
+    if (!files.length) return;
+    if (files.some(file => !(file.type.startsWith("audio/") || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(file.name)))) {
+      msg("player-message", "Wybierz pliki audio (MP3, WAV, OGG, M4A lub FLAC).", true);
       e.target.value = "";
       return;
     }
-    const blobUrl = URL.createObjectURL(file);
+    musicQueue.forEach(item => { try { URL.revokeObjectURL(item.url); } catch (_) {} });
+    musicQueue = files.map(file => ({ name: file.name, url: URL.createObjectURL(file) }));
+    currentQueueIndex = -1;
+    renderQueue();
     try {
-      await playUrl(blobUrl, file.name, 0, blobUrl);
+      await playQueueIndex(0);
       $("source-pill").textContent = "LOCAL AUDIO";
+      msg("player-message", `Dodano ${files.length} plików do kolejki.`);
     } catch (err) {
       console.error(err);
-      URL.revokeObjectURL(blobUrl);
-      localUrl = null;
-      msg("player-message", "Nie udało się załadować pliku. Spróbuj innego MP3 lub WAV.", true);
+      msg("player-message", "Nie udało się załadować plików. Spróbuj MP3 lub WAV.", true);
     }
+    e.target.value = "";
   });
 
   async function loadPlaylists() {

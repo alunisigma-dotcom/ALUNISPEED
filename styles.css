@@ -24,3 +24,18 @@ body{background:radial-gradient(ellipse at 15% 0%,#3a205f 0,transparent 34%),rad
 .voice-bass{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;color:var(--muted);font-size:12px;}
 .voice-bass strong{color:var(--green);}
 .voice-bass input{grid-column:1/-1;margin:7px 0 2px;width:100%;accent-color:var(--purple);}
+
+
+/* ALUNISPEED music controls */
+.player-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.button.selected,.queue-item.current{border-color:#a77bff;background:#35244d;color:#fff}
+.equalizer label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}
+.equalizer label strong{color:var(--green)}
+.queue-panel{max-height:260px;overflow:auto}
+.queue-item{width:100%;display:flex;gap:10px;align-items:center;text-align:left;background:#171222;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;margin:5px 0;cursor:pointer;font-size:12px;overflow-wrap:anywhere}
+.queue-item span{color:var(--purple);font-weight:700;min-width:24px}
+.music-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.music-stats>div{display:grid;gap:5px;background:#0f0c18;border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
+.music-stats span{font-size:10px;color:var(--muted)}
+.music-stats strong{font-size:14px;overflow-wrap:anywhere}
+@media(max-width:560px){.music-stats{grid-template-columns:1fr}.player-actions button{flex:1}}
