@@ -31,7 +31,7 @@
     const email = $("email").value.trim(), password = $("password").value;
     try {
       if (mode === "signup") {
-        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: "http://alunispeed.pl/" } });
+        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: "https://alunisigma-dotcom.github.io/ALUNISPEED/" } });
         msg("auth-message", error ? error.message : "Konto utworzone. Sprawdź e-mail, aby potwierdzić rejestrację.", !!error);
       } else {
         const { data, error } = await db.auth.signInWithPassword({ email, password });
@@ -56,6 +56,31 @@
   }
   $("auth-form").addEventListener("submit", e => { e.preventDefault(); auth("login"); });
   $("signup-btn").addEventListener("click", () => auth("signup"));
+  // Password reset: Supabase sends a recovery link to the entered email.
+  const resetBtn = $("reset-password-btn");
+  if (resetBtn) resetBtn.addEventListener("click", async () => {
+    if (!needDb()) return;
+    const email = $("email").value.trim();
+    if (!email) {
+      msg("auth-message", "Najpierw wpisz adres e-mail, na który mam wysłać link resetujący.", true);
+      $("email").focus();
+      return;
+    }
+    resetBtn.disabled = true;
+    msg("auth-message", "Wysyłam link do resetowania hasła…");
+    try {
+      const { error } = await db.auth.resetPasswordForEmail(email, {
+        redirectTo: "https://alunisigma-dotcom.github.io/ALUNISPEED/"
+      });
+      msg("auth-message", error
+        ? error.message
+        : "Jeśli konto istnieje, wysłaliśmy link do zmiany hasła. Sprawdź też folder SPAM.");
+    } catch (err) {
+      msg("auth-message", err.message || "Nie udało się wysłać linku resetującego.", true);
+    } finally {
+      resetBtn.disabled = false;
+    }
+  });
   $("logout-btn").addEventListener("click", async () => { if (db) { if (notificationChannel) await db.removeChannel(notificationChannel); await db.auth.signOut(); } notificationChannel = null; user = null; isOwner = false; isPremium = false; setUser(); showView("home"); });
   $("auth-open").addEventListener("click", () => $("auth-panel").scrollIntoView({ behavior: "smooth" }));
   document.querySelectorAll(".nav-btn").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
