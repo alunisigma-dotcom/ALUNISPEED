@@ -105,9 +105,11 @@
       if (error) throw error;
       resetForm.reset();
       $("password-reset-panel").classList.add("hidden");
-      $("auth-panel").classList.add("hidden");
-      msg("auth-message", "Hasło zostało zmienione. Możesz już korzystać z ALUNISPEED.");
-      await applySession((await db.auth.getUser()).data.user);
+      await db.auth.signOut();
+      user = null; isOwner = false; isPremium = false;
+      setUser();
+      $("auth-panel").classList.remove("hidden");
+      msg("auth-message", "Hasło zostało zmienione. Zaloguj się teraz nowym hasłem.");
     } catch (err) {
       msg("password-reset-message", err.message || "Nie udało się zmienić hasła.", true);
     } finally {
@@ -393,16 +395,31 @@
 
   async function init() {
     if (!db) { setUser(); msg("auth-message", "Uzupełnij config.js danymi Supabase.", true); return; }
-    const { data, error } = await db.auth.getSession(); if (error) console.error(error);
-    await applySession(data.session?.user || null);
+    // Register BEFORE getSession(): Supabase may process the recovery URL during
+    // initialization and emit PASSWORD_RECOVERY immediately.
+    let recoveryMode = false;
     db.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY") {
+        recoveryMode = true;
         $("password-reset-panel").classList.remove("hidden");
         $("auth-panel").classList.add("hidden");
         $("password-reset-panel").scrollIntoView({ behavior: "smooth", block: "center" });
       }
-      applySession(session?.user || null);
+      // Keep the authenticated session, but do not let the recovery screen
+      // disappear while the user is choosing a new password.
+      if (event === "SIGNED_OUT") {
+        recoveryMode = false;
+        $("password-reset-panel").classList.add("hidden");
+      }
+      applySession(session?.user || null).then(() => {
+        if (recoveryMode) {
+          $("password-reset-panel").classList.remove("hidden");
+          $("auth-panel").classList.add("hidden");
+        }
+      });
     });
+    const { data, error } = await db.auth.getSession(); if (error) console.error(error);
+    await applySession(data.session?.user || null);
   }
   init();
 })();
