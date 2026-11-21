@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d0b16">
+  <title>Reset hasła • ALUNISPEED</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="shell">
+  <main class="main" style="max-width:760px;margin:8vh auto">
+    <header class="topbar"><span><i></i> ALUNISPEED • ACCOUNT RECOVERY</span></header>
+    <section class="panel auth-panel">
+      <div>
+        <p class="eyebrow">ACCOUNT RECOVERY</p>
+        <h2>Ustaw nowe hasło</h2>
+        <p class="muted" id="reset-status">Sprawdzam bezpieczny link do zmiany hasła…</p>
+      </div>
+      <form id="reset-form" class="hidden">
+        <input id="new-password" type="password" placeholder="Nowe hasło (min. 6 znaków)" minlength="6" autocomplete="new-password" required>
+        <input id="confirm-password" type="password" placeholder="Powtórz nowe hasło" minlength="6" autocomplete="new-password" required>
+        <button class="button" id="save-btn" type="submit">Zapisz nowe hasło</button>
+        <p id="reset-message" class="message" aria-live="polite"></p>
+      </form>
+      <p><a class="ghost" href="/">← Wróć do ALUNISPEED</a></p>
+    </section>
+  </main>
+</div>
+<script src="config.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const status = (text, error=false) => {
+    $("reset-status").textContent = text;
+    $("reset-status").style.color = error ? "#ff9baf" : "#8df0c2";
+  };
+  const msg = (text, error=false) => {
+    $("reset-message").textContent = text;
+    $("reset-message").style.color = error ? "#ff9baf" : "#8df0c2";
+  };
+  const cfg = window.ALUNISPEED_CONFIG || {};
+  if (!window.supabase || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
+    status("Brakuje konfiguracji Supabase. Sprawdź plik config.js.", true);
+    return;
+  }
+  const db = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+    auth: { detectSessionInUrl: true }
+  });
+  let recoveryReady = false;
+  const reveal = () => {
+    recoveryReady = true;
+    $("reset-form").classList.remove("hidden");
+    status("Link zaakceptowany. Wpisz i zapisz nowe hasło.");
+  };
+  db.auth.onAuthStateChange((event, session) => {
+    if (event === "PASSWORD_RECOVERY" || (session && location.hash.includes("type=recovery"))) reveal();
+  });
+  // If the SDK already processed the link before the listener was attached,
+  // accept the recovery session only when the URL explicitly marks recovery.
+  (async () => {
+    const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const query = new URLSearchParams(location.search);
+    const isRecovery = hash.get("type") === "recovery" || query.get("type") === "recovery" || query.has("code");
+    if (isRecovery) {
+      const { data, error } = await db.auth.getSession();
+      if (!error && data.session) reveal();
+      else status("Link jest nieprawidłowy lub wygasł. Wyślij nowy link z ekranu logowania.", true);
+    } else {
+      status("Otwórz tę stronę przez świeży link resetujący z wiadomości e-mail.", true);
+    }
+  })();
+  $("reset-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!recoveryReady) return;
+    const password = $("new-password").value;
+    const confirm = $("confirm-password").value;
+    if (password.length < 6) return msg("Hasło musi mieć co najmniej 6 znaków.", true);
+    if (password !== confirm) return msg("Hasła nie są identyczne.", true);
+    $("save-btn").disabled = true;
+    msg("Zapisuję nowe hasło…");
+    const { error } = await db.auth.updateUser({ password });
+    if (error) {
+      msg(error.message, true);
+      $("save-btn").disabled = false;
+      return;
+    }
+    await db.auth.signOut();
+    $("reset-form").classList.add("hidden");
+    status("Hasło zostało zmienione. Możesz wrócić do ALUNISPEED i zalogować się nowym hasłem.");
+  });
+})();
+</script>
+</body>
+</html>
