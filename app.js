@@ -29,7 +29,7 @@
     const email = $("email").value.trim(), password = $("password").value;
     try {
       if (mode === "signup") {
-        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
+        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: "https://alunispeed.pl/" } });
         msg("auth-message", error ? error.message : "Konto utworzone. Sprawdź e-mail, aby potwierdzić rejestrację.", !!error);
       } else {
         const { data, error } = await db.auth.signInWithPassword({ email, password });
@@ -84,6 +84,7 @@
     if (localUrl && localUrl !== blobUrl) URL.revokeObjectURL(localUrl);
     localUrl = blobUrl;
     audio.pause();
+    audio.crossOrigin = "anonymous";
     audio.removeAttribute("src");
     audio.load();
     audio.src = url;
@@ -150,7 +151,30 @@
     const byItem = Object.fromEntries((settings || []).map(x => [x.playlist_item_id, x.bass_percent]));
     $("playlist-track-list").innerHTML = items.map((t, i) => `<div class="track-row"><div class="track-meta"><b>${i + 1}. ${esc(t.title)}</b><span class="muted tiny">${esc(t.mime_type || "Audio")}</span></div><label class="tiny">Bas utworu <input type="range" min="0" max="${isPremium ? 250 : 75}" value="${byItem[t.id] ?? playlistBass}" data-track-bass="${t.id}"></label><button class="button small" data-play-track="${t.id}">▶ Odtwórz</button></div>`).join("");
     document.querySelectorAll("[data-track-bass]").forEach(slider => slider.addEventListener("change", async () => { const { error } = await db.from("user_track_settings").upsert({ user_id: user.id, playlist_item_id: slider.dataset.trackBass, bass_percent: Number(slider.value) }, { onConflict: "user_id,playlist_item_id" }); if (error) msg("player-message", error.message, true); }));
-    document.querySelectorAll("[data-play-track]").forEach(b => b.addEventListener("click", async () => { const item = items.find(x => x.id === b.dataset.playTrack); const v = Number(document.querySelector(`[data-track-bass="${item.id}"]`).value); const { data: signed, error } = await db.storage.from("music").createSignedUrl(item.object_path, 3600); if (error) { msg("player-message", error.message, true); return; } try { await playUrl(signed.signedUrl, item.title, v); } catch (e) { msg("player-message", e.message, true); } }));
+    document.querySelectorAll("[data-play-track]").forEach(b => b.addEventListener("click", async () => {
+      const item = items.find(x => x.id === b.dataset.playTrack);
+      if (!item) { msg("player-message", "Nie znaleziono utworu na playliście.", true); return; }
+      const bassControl = document.querySelector(`[data-track-bass="${item.id}"]`);
+      const v = Number(bassControl?.value ?? playlistBass);
+      b.disabled = true;
+      b.textContent = "Ładowanie…";
+      try {
+        const { data: signed, error } = await db.storage.from("music").createSignedUrl(item.object_path, 3600);
+        if (error) throw error;
+        if (!signed?.signedUrl) throw new Error("Supabase nie zwrócił linku do pliku audio.");
+        // The player lives in the home view, so reveal it before starting playback.
+        showView("home");
+        msg("player-message", "Ładuję: " + item.title);
+        await playUrl(signed.signedUrl, item.title, v);
+      } catch (e) {
+        console.error("ALUNISPEED playback failed:", e);
+        showView("home");
+        msg("player-message", "Nie udało się odtworzyć „" + item.title + "”: " + (e.message || "nieznany błąd"), true);
+      } finally {
+        b.disabled = false;
+        b.textContent = "▶ Odtwórz";
+      }
+    }));
     activePlaylistId = id; showView("library");
   }
 
