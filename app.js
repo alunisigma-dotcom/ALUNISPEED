@@ -31,7 +31,7 @@
     const email = $("email").value.trim(), password = $("password").value;
     try {
       if (mode === "signup") {
-        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: "https://alunisigma-dotcom.github.io/ALUNISPEED/" } });
+        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: "http://alunispeed.pl/" } });
         msg("auth-message", error ? error.message : "Konto utworzone. Sprawdź e-mail, aby potwierdzić rejestrację.", !!error);
       } else {
         const { data, error } = await db.auth.signInWithPassword({ email, password });
