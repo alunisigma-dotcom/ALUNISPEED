@@ -6,6 +6,8 @@
   const db = configured && window.supabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   let user = null, isOwner = false, isPremium = false, localUrl = null, activePlaylistId = null, notificationChannel = null;
   let audioCtx = null, bassFilter = null, mediaSource = null, compressor = null;
+  const inlineAudioGraphs = new WeakMap();
+  const bassGainDb = value => (Math.min(Number(value) || 0, isPremium ? 250 : 75) / (isPremium ? 250 : 75)) * (isPremium ? 24 : 18);
 
   const msg = (id, text, error = false) => { const el = $(id); if (el) { el.textContent = text; el.style.color = error ? "#ff9baf" : "#8df0c2"; } };
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -72,7 +74,7 @@
   function applyBass(value) {
     const max = isPremium ? 250 : 75, v = Math.min(Number(value), max);
     $("bass-range").max = String(max); $("bass-value").textContent = v + "%";
-    if (bassFilter && audioCtx) bassFilter.gain.setTargetAtTime((v / max) * 9, audioCtx.currentTime, .08);
+    if (bassFilter && audioCtx) bassFilter.gain.setTargetAtTime((v / max) * (isPremium ? 24 : 18), audioCtx.currentTime, .08);
     $("bass-warning").classList.toggle("hidden", v <= 75);
   }
   $("bass-range").addEventListener("input", e => applyBass(e.target.value));
@@ -136,6 +138,31 @@
     $("playlist-list").innerHTML = data.map(p => `<article class="playlist-card"><div class="card-top"><span class="eyebrow">ALUNISPEED PLAYLIST</span><span class="pill">${p.owner_id === user.id ? "WŁASNA" : "OTRZYMANA"}</span></div><h3>${esc(p.name)}</h3><p>Otwórz, aby zobaczyć utwory i ustawienia basu.</p><button class="button small" data-open-playlist="${p.id}">Otwórz playlistę</button></article>`).join("");
     document.querySelectorAll("[data-open-playlist]").forEach(b => b.addEventListener("click", () => openPlaylist(b.dataset.openPlaylist)));
   }
+  async function setupInlineAudio(audio, initialBass) {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      if (!audioCtx) audioCtx = new Ctx();
+      let graph = inlineAudioGraphs.get(audio);
+      if (!graph) {
+        const source = audioCtx.createMediaElementSource(audio);
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = "lowshelf";
+        filter.frequency.value = 110;
+        source.connect(filter);
+        filter.connect(audioCtx.destination);
+        graph = { filter };
+        inlineAudioGraphs.set(audio, graph);
+      }
+      graph.filter.gain.setTargetAtTime(bassGainDb(initialBass), audioCtx.currentTime, .06);
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+      return graph;
+    } catch (err) {
+      console.warn("Inline bass EQ unavailable; native audio remains available.", err);
+      return null;
+    }
+  }
+
   async function openPlaylist(id) {
     const { data: playlist, error } = await db.from("playlists").select("id,name,owner_id").eq("id", id).single();
     if (error) { msg("player-message", error.message, true); return; }
@@ -143,39 +170,54 @@
     if (itemError) { msg("player-message", itemError.message, true); return; }
     const { data: setting } = await db.from("user_playlist_settings").select("bass_percent").eq("user_id", user.id).eq("playlist_id", id).maybeSingle();
     const playlistBass = setting?.bass_percent ?? 0;
-    $("playlist-list").innerHTML = `<div class="playlist-detail"><button class="ghost" id="back-library">← Wróć do playlist</button><p class="eyebrow">PLAYLIST</p><h2>${esc(playlist.name)}</h2><div class="control-block"><label>Bas całej playlisty <strong>${playlistBass}%</strong></label><input id="playlist-bass" type="range" min="0" max="${isPremium ? 250 : 75}" value="${playlistBass}"/><button class="button outline small" id="save-playlist-bass">Zapisz bas playlisty</button></div><div id="playlist-track-list" class="track-list"></div></div>`;
+    const maxBass = isPremium ? 250 : 75;
+    $("playlist-list").innerHTML = `<div class="playlist-detail"><button class="ghost" id="back-library">← Wróć do playlist</button><p class="eyebrow">NOWA WIADOMOŚĆ AUDIO</p><h2>${esc(playlist.name)}</h2><p class="muted">Otrzymana playlista — każdy utwór możesz odtworzyć bez opuszczania tej strony.</p><div class="control-block"><label>Bas całej playlisty <strong id="playlist-bass-value">${playlistBass}%</strong></label><input id="playlist-bass" type="range" min="0" max="${maxBass}" value="${playlistBass}"/><button class="button outline small" id="save-playlist-bass">Zapisz bas playlisty</button></div><div id="playlist-track-list" class="track-list"></div></div>`;
     $("back-library").addEventListener("click", loadPlaylists);
-    $("save-playlist-bass").addEventListener("click", async () => { const v = Number($("playlist-bass").value); const { error } = await db.from("user_playlist_settings").upsert({ user_id: user.id, playlist_id: id, bass_percent: v }, { onConflict: "user_id,playlist_id" }); msg("player-message", error ? error.message : "Zapisano bas playlisty.", !!error); });
-    if (!items?.length) { $("playlist-track-list").innerHTML = '<p class="muted">Ta playlista nie ma jeszcze utworów.</p>'; return; }
+    const playlistSlider = $("playlist-bass");
+    playlistSlider.addEventListener("input", () => {
+      $("playlist-bass-value").textContent = playlistSlider.value + "%";
+      document.querySelectorAll("[data-track-bass]").forEach(slider => {
+        if (!slider.dataset.custom) { slider.value = playlistSlider.value; const audio = document.querySelector(`[data-voice-audio="${slider.dataset.trackBass}"]`); const graph = audio && inlineAudioGraphs.get(audio); if (graph && audioCtx) graph.filter.gain.setTargetAtTime(bassGainDb(slider.value), audioCtx.currentTime, .06); }
+      });
+    });
+    $("save-playlist-bass").addEventListener("click", async () => { const v = Number(playlistSlider.value); const { error } = await db.from("user_playlist_settings").upsert({ user_id: user.id, playlist_id: id, bass_percent: v }, { onConflict: "user_id,playlist_id" }); msg("player-message", error ? error.message : "Zapisano bas playlisty.", !!error); });
+    if (!items?.length) { $("playlist-track-list").innerHTML = '<p class="muted">Ta playlista nie ma jeszcze utworów.</p>'; showView("library"); return; }
     const { data: settings } = await db.from("user_track_settings").select("playlist_item_id,bass_percent").eq("user_id", user.id).in("playlist_item_id", items.map(x => x.id));
     const byItem = Object.fromEntries((settings || []).map(x => [x.playlist_item_id, x.bass_percent]));
-    $("playlist-track-list").innerHTML = items.map((t, i) => `<div class="track-row"><div class="track-meta"><b>${i + 1}. ${esc(t.title)}</b><span class="muted tiny">${esc(t.mime_type || "Audio")}</span></div><label class="tiny">Bas utworu <input type="range" min="0" max="${isPremium ? 250 : 75}" value="${byItem[t.id] ?? playlistBass}" data-track-bass="${t.id}"></label><button class="button small" data-play-track="${t.id}">▶ Odtwórz</button></div>`).join("");
-    document.querySelectorAll("[data-track-bass]").forEach(slider => slider.addEventListener("change", async () => { const { error } = await db.from("user_track_settings").upsert({ user_id: user.id, playlist_item_id: slider.dataset.trackBass, bass_percent: Number(slider.value) }, { onConflict: "user_id,playlist_item_id" }); if (error) msg("player-message", error.message, true); }));
-    document.querySelectorAll("[data-play-track]").forEach(b => b.addEventListener("click", async () => {
-      const item = items.find(x => x.id === b.dataset.playTrack);
-      if (!item) { msg("player-message", "Nie znaleziono utworu na playliście.", true); return; }
-      const bassControl = document.querySelector(`[data-track-bass="${item.id}"]`);
-      const v = Number(bassControl?.value ?? playlistBass);
-      b.disabled = true;
-      b.textContent = "Ładowanie…";
+    $("playlist-track-list").innerHTML = items.map((t, i) => {
+      const initial = byItem[t.id] ?? playlistBass;
+      return `<article class="voice-note"><div class="voice-note-head"><span class="voice-avatar">♫</span><div class="voice-note-title"><b>${i + 1}. ${esc(t.title)}</b><span class="muted tiny">${esc(t.mime_type || "Wiadomość audio")}</span></div><span class="pill">AUDIO</span></div><audio class="voice-audio" controls preload="none" data-voice-audio="${t.id}" aria-label="Odtwórz ${esc(t.title)}"></audio><label class="voice-bass">Bass Boost <strong data-bass-label="${t.id}">${initial}%</strong><input type="range" min="0" max="${maxBass}" value="${initial}" data-track-bass="${t.id}"/></label><span class="tiny muted" data-audio-status="${t.id}">Przygotowuję wiadomość audio…</span></article>`;
+    }).join("");
+    showView("library");
+    for (const item of items) {
+      const audio = document.querySelector(`[data-voice-audio="${item.id}"]`);
+      const slider = document.querySelector(`[data-track-bass="${item.id}"]`);
+      const status = document.querySelector(`[data-audio-status="${item.id}"]`);
+      audio.crossOrigin = "anonymous";
+      audio.addEventListener("play", async () => { const graph = await setupInlineAudio(audio, slider.value); if (graph && audioCtx.state === "suspended") await audioCtx.resume(); });
+      audio.addEventListener("error", () => { status.textContent = "Nie udało się załadować audio. Spróbuj odświeżyć playlistę."; });
+      slider.addEventListener("input", () => {
+        slider.dataset.custom = "1";
+        document.querySelector(`[data-bass-label="${item.id}"]`).textContent = slider.value + "%";
+        const graph = inlineAudioGraphs.get(audio);
+        if (graph && audioCtx) graph.filter.gain.setTargetAtTime(bassGainDb(slider.value), audioCtx.currentTime, .06);
+      });
+      slider.addEventListener("change", async () => {
+        const { error } = await db.from("user_track_settings").upsert({ user_id: user.id, playlist_item_id: item.id, bass_percent: Number(slider.value) }, { onConflict: "user_id,playlist_item_id" });
+        if (error) msg("player-message", error.message, true);
+      });
       try {
         const { data: signed, error } = await db.storage.from("music").createSignedUrl(item.object_path, 3600);
         if (error) throw error;
-        if (!signed?.signedUrl) throw new Error("Supabase nie zwrócił linku do pliku audio.");
-        // The player lives in the home view, so reveal it before starting playback.
-        showView("home");
-        msg("player-message", "Ładuję: " + item.title);
-        await playUrl(signed.signedUrl, item.title, v);
-      } catch (e) {
-        console.error("ALUNISPEED playback failed:", e);
-        showView("home");
-        msg("player-message", "Nie udało się odtworzyć „" + item.title + "”: " + (e.message || "nieznany błąd"), true);
-      } finally {
-        b.disabled = false;
-        b.textContent = "▶ Odtwórz";
+        if (!signed?.signedUrl) throw new Error("Brak linku do pliku audio.");
+        audio.src = signed.signedUrl;
+        audio.load();
+        status.textContent = "Gotowe — naciśnij Play, aby odsłuchać.";
+      } catch (err) {
+        status.textContent = "Błąd audio: " + (err.message || "nieznany błąd");
       }
-    }));
-    activePlaylistId = id; showView("library");
+    }
+    activePlaylistId = id;
   }
 
   async function loadNotifications() {
