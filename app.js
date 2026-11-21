@@ -132,9 +132,60 @@
 
   async function loadPlaylists() {
     if (!user) return;
-    const { data, error } = await db.from("playlists").select("id,name,owner_id,created_at").order("created_at", { ascending: false });
-    if (error) { console.error(error); $("playlist-list").innerHTML = `<p class="muted">${esc(error.message)}</p>`; return; }
-    if (!data?.length) { $("playlist-list").innerHTML = '<p class="muted">Nie masz jeszcze playlist. Gdy OWNER coś Ci wyśle, pojawi się tutaj.</p>'; return; }
+
+    // Load the user's own playlists and separately load playlists explicitly
+    // shared with this account. This avoids relying on a broad "select all"
+    // query and makes the recipient path explicit.
+    const [ownResult, sharesResult] = await Promise.all([
+      db.from("playlists")
+        .select("id,name,owner_id,created_at")
+        .eq("owner_id", user.id)
+        .order("created_at", { ascending: false }),
+      db.from("playlist_shares")
+        .select("playlist_id")
+        .eq("recipient_user_id", user.id)
+    ]);
+
+    if (ownResult.error) {
+      console.error("Nie udało się pobrać własnych playlist:", ownResult.error);
+      $("playlist-list").innerHTML = `<p class="muted">${esc(ownResult.error.message)}</p>`;
+      return;
+    }
+    if (sharesResult.error) {
+      console.error("Nie udało się pobrać udostępnionych playlist:", sharesResult.error);
+      $("playlist-list").innerHTML = `<p class="muted">${esc(sharesResult.error.message)}</p>`;
+      return;
+    }
+
+    const sharedIds = [...new Set((sharesResult.data || []).map(row => row.playlist_id).filter(Boolean))];
+    let sharedPlaylists = [];
+    if (sharedIds.length) {
+      const sharedResult = await db.from("playlists")
+        .select("id,name,owner_id,created_at")
+        .in("id", sharedIds)
+        .order("created_at", { ascending: false });
+
+      if (sharedResult.error) {
+        console.error("Nie udało się pobrać otrzymanych playlist:", sharedResult.error);
+        $("playlist-list").innerHTML = `<p class="muted">${esc(sharedResult.error.message)}</p>`;
+        return;
+      }
+      sharedPlaylists = sharedResult.data || [];
+    }
+
+    const byId = new Map();
+    for (const playlist of [...(ownResult.data || []), ...sharedPlaylists]) {
+      byId.set(playlist.id, playlist);
+    }
+    const data = [...byId.values()].sort((a, b) =>
+      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+
+    if (!data.length) {
+      $("playlist-list").innerHTML = '<p class="muted">Nie masz jeszcze playlist. Gdy OWNER coś Ci wyśle, pojawi się tutaj.</p>';
+      return;
+    }
+
     $("playlist-list").innerHTML = data.map(p => `<article class="playlist-card"><div class="card-top"><span class="eyebrow">ALUNISPEED PLAYLIST</span><span class="pill">${p.owner_id === user.id ? "WŁASNA" : "OTRZYMANA"}</span></div><h3>${esc(p.name)}</h3><p>Otwórz, aby zobaczyć utwory i ustawienia basu.</p><button class="button small" data-open-playlist="${p.id}">Otwórz playlistę</button></article>`).join("");
     document.querySelectorAll("[data-open-playlist]").forEach(b => b.addEventListener("click", () => openPlaylist(b.dataset.openPlaylist)));
   }
