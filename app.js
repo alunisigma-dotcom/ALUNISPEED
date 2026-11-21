@@ -29,7 +29,7 @@
     const email = $("email").value.trim(), password = $("password").value;
     try {
       if (mode === "signup") {
-        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: "https://alunisigma-dotcom.github.io/ALUNISPEED/" } });
+        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
         msg("auth-message", error ? error.message : "Konto utworzone. Sprawdź e-mail, aby potwierdzić rejestrację.", !!error);
       } else {
         const { data, error } = await db.auth.signInWithPassword({ email, password });
@@ -169,21 +169,50 @@
     const name = $("owner-playlist-name").value.trim(), email = $("recipient-email").value.trim().toLowerCase(), files = [...$("owner-audio-files").files];
     if (!files.length) { msg("owner-message", "Wybierz co najmniej jeden plik.", true); return; }
     if (files.some(f => !(f.type.startsWith("audio/") || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(f.name)))) { msg("owner-message", "Wszystkie pliki muszą być plikami audio.", true); return; }
+    let uploadStage = "sprawdzanie odbiorcy";
     msg("owner-message", "Sprawdzam odbiorcę…");
     try {
+      uploadStage = "sprawdzanie odbiorcy";
       const { data: recipient, error: findError } = await db.from("profiles").select("id,email").eq("email", email).maybeSingle();
-      if (findError) throw findError; if (!recipient) throw new Error("Nie znaleziono zarejestrowanego użytkownika o takim e-mailu.");
-      const { data: playlist, error: pError } = await db.from("playlists").insert({ owner_id: user.id, user_id: user.id, name }).select("id").single(); if (pError) throw pError;
+      if (findError) throw findError;
+      if (!recipient) throw new Error("Nie znaleziono zarejestrowanego użytkownika o takim e-mailu.");
+
+      uploadStage = "tworzenie playlisty";
+      msg("owner-message", "Tworzę playlistę…");
+      const { data: playlist, error: pError } = await db.from("playlists").insert({ owner_id: user.id, user_id: user.id, name }).select("id").single();
+      if (pError) throw pError;
+
       for (let i = 0; i < files.length; i++) {
-        const file = files[i], safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100), objectPath = `${playlist.id}/${crypto.randomUUID()}-${safeName}`;
+        const file = files[i];
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100);
+        const objectPath = `${playlist.id}/${crypto.randomUUID()}-${safeName}`;
+        uploadStage = "wysyłanie pliku do Storage";
         msg("owner-message", `Wysyłam plik ${i + 1}/${files.length}…`);
-        const { error: uploadError } = await db.storage.from("music").upload(objectPath, file, { contentType: file.type || "application/octet-stream", upsert: false }); if (uploadError) throw uploadError;
-        const { error: itemError } = await db.from("playlist_items").insert({ playlist_id: playlist.id, title: file.name, object_path: objectPath, mime_type: file.type || "audio", position: i }); if (itemError) throw itemError;
+        const { error: uploadError } = await db.storage.from("music").upload(objectPath, file, { contentType: file.type || "application/octet-stream", upsert: false });
+        if (uploadError) throw uploadError;
+
+        uploadStage = "dodawanie utworu do playlisty";
+        msg("owner-message", `Dodaję utwór ${i + 1}/${files.length}…`);
+        const { error: itemError } = await db.from("playlist_items").insert({ playlist_id: playlist.id, title: file.name, object_path: objectPath, mime_type: file.type || "audio", position: i });
+        if (itemError) throw itemError;
       }
-      const { error: shareError } = await db.from("playlist_shares").insert({ playlist_id: playlist.id, recipient_user_id: recipient.id, shared_by: user.id }); if (shareError) throw shareError;
-      const { error: noteError } = await db.from("notifications").insert({ recipient_user_id: recipient.id, playlist_id: playlist.id, message: `Otrzymałeś nową playlistę „${name}” od ALUNISPEED.` }); if (noteError) throw noteError;
-      msg("owner-message", `Gotowe! Playlista „${name}” została wysłana do ${email}.`); $("send-playlist-form").reset();
-    } catch (err) { console.error(err); msg("owner-message", err.message || "Nie udało się wysłać playlisty.", true); }
+
+      uploadStage = "udostępnianie playlisty";
+      msg("owner-message", "Udostępniam playlistę odbiorcy…");
+      const { error: shareError } = await db.from("playlist_shares").insert({ playlist_id: playlist.id, recipient_user_id: recipient.id, shared_by: user.id });
+      if (shareError) throw shareError;
+
+      uploadStage = "tworzenie powiadomienia";
+      msg("owner-message", "Tworzę powiadomienie…");
+      const { error: noteError } = await db.from("notifications").insert({ recipient_user_id: recipient.id, playlist_id: playlist.id, message: `Otrzymałeś nową playlistę „${name}” od ALUNISPEED.` });
+      if (noteError) throw noteError;
+
+      msg("owner-message", `Gotowe! Playlista „${name}” została wysłana do ${email}.`);
+      $("send-playlist-form").reset();
+    } catch (err) {
+      console.error("ALUNISPEED playlist send failed at:", uploadStage, err);
+      msg("owner-message", `${uploadStage}: ${err.message || "Nie udało się wysłać playlisty."}`, true);
+    }
   });
 
   async function init() {
