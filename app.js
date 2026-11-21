@@ -31,7 +31,7 @@
     const email = $("email").value.trim(), password = $("password").value;
     try {
       if (mode === "signup") {
-        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: "https://alunisigma-dotcom.github.io/ALUNISPEED/" } });
+        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: "http://alunispeed.pl/" } });
         msg("auth-message", error ? error.message : "Konto utworzone. Sprawdź e-mail, aby potwierdzić rejestrację.", !!error);
       } else {
         const { data, error } = await db.auth.signInWithPassword({ email, password });
@@ -56,13 +56,13 @@
   }
   $("auth-form").addEventListener("submit", e => { e.preventDefault(); auth("login"); });
   $("signup-btn").addEventListener("click", () => auth("signup"));
-  // Password reset: Supabase sends a recovery link to the entered email.
+  // Request a password recovery email.
   const resetBtn = $("reset-password-btn");
   if (resetBtn) resetBtn.addEventListener("click", async () => {
     if (!needDb()) return;
     const email = $("email").value.trim();
     if (!email) {
-      msg("auth-message", "Najpierw wpisz adres e-mail, na który mam wysłać link resetujący.", true);
+      msg("auth-message", "Wpisz najpierw adres e-mail konta.", true);
       $("email").focus();
       return;
     }
@@ -74,13 +74,47 @@
       });
       msg("auth-message", error
         ? error.message
-        : "Jeśli konto istnieje, wysłaliśmy link do zmiany hasła. Sprawdź też folder SPAM.");
+        : "Jeśli konto istnieje, wysłaliśmy link. Otwórz go i ustaw nowe hasło na stronie ALUNISPEED. Sprawdź też SPAM.");
     } catch (err) {
       msg("auth-message", err.message || "Nie udało się wysłać linku resetującego.", true);
     } finally {
       resetBtn.disabled = false;
     }
   });
+
+  // After the recovery link opens the site, Supabase emits PASSWORD_RECOVERY.
+  const resetForm = $("password-reset-form");
+  if (resetForm) resetForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!needDb()) return;
+    const password = $("new-password").value;
+    const confirmation = $("confirm-new-password").value;
+    if (password.length < 6) {
+      msg("password-reset-message", "Hasło musi mieć co najmniej 6 znaków.", true);
+      return;
+    }
+    if (password !== confirmation) {
+      msg("password-reset-message", "Hasła nie są identyczne.", true);
+      return;
+    }
+    const saveBtn = $("save-new-password-btn");
+    saveBtn.disabled = true;
+    msg("password-reset-message", "Zapisuję nowe hasło…");
+    try {
+      const { error } = await db.auth.updateUser({ password });
+      if (error) throw error;
+      resetForm.reset();
+      $("password-reset-panel").classList.add("hidden");
+      $("auth-panel").classList.add("hidden");
+      msg("auth-message", "Hasło zostało zmienione. Możesz już korzystać z ALUNISPEED.");
+      await applySession((await db.auth.getUser()).data.user);
+    } catch (err) {
+      msg("password-reset-message", err.message || "Nie udało się zmienić hasła.", true);
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
   $("logout-btn").addEventListener("click", async () => { if (db) { if (notificationChannel) await db.removeChannel(notificationChannel); await db.auth.signOut(); } notificationChannel = null; user = null; isOwner = false; isPremium = false; setUser(); showView("home"); });
   $("auth-open").addEventListener("click", () => $("auth-panel").scrollIntoView({ behavior: "smooth" }));
   document.querySelectorAll(".nav-btn").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -361,7 +395,14 @@
     if (!db) { setUser(); msg("auth-message", "Uzupełnij config.js danymi Supabase.", true); return; }
     const { data, error } = await db.auth.getSession(); if (error) console.error(error);
     await applySession(data.session?.user || null);
-    db.auth.onAuthStateChange((_event, session) => { applySession(session?.user || null); });
+    db.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        $("password-reset-panel").classList.remove("hidden");
+        $("auth-panel").classList.add("hidden");
+        $("password-reset-panel").scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      applySession(session?.user || null);
+    });
   }
   init();
 })();

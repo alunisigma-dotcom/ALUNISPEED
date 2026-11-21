@@ -33,6 +33,21 @@
       </form>
     </section>
 
+
+    <section id="password-reset-panel" class="panel auth-panel hidden">
+      <div>
+        <p class="eyebrow">ACCOUNT RECOVERY</p>
+        <h2>Ustaw nowe hasło</h2>
+        <p class="muted">Link z wiadomości został otwarty. Wpisz nowe hasło do swojego konta ALUNISPEED.</p>
+      </div>
+      <form id="password-reset-form">
+        <input id="new-password" type="password" placeholder="Nowe hasło (min. 6 znaków)" minlength="6" autocomplete="new-password" required>
+        <input id="confirm-new-password" type="password" placeholder="Powtórz nowe hasło" minlength="6" autocomplete="new-password" required>
+        <button class="button" type="submit" id="save-new-password-btn">Zapisz nowe hasło</button>
+        <p id="password-reset-message" class="message" aria-live="polite"></p>
+      </form>
+    </section>
+
     <section id="home-view" class="view">
       <div class="hero"><div><p class="eyebrow">ALUNISPEED PLAYER</p><h1>Twoja muzyka.<br><span>Twoje tempo.</span></h1><p class="muted">Odtwarzaj własne pliki oraz playlisty otrzymane od ALUNISPEED.</p></div><div class="orb">♫</div></div>
       <section class="panel add-panel">
