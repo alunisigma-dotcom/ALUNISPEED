@@ -9,6 +9,22 @@
   let musicQueue = [], currentQueueIndex = -1, repeatMode = 0;
   const STATS_KEY = "alunispeed_music_stats_v1";
   const inlineAudioGraphs = new WeakMap();
+  // Zgodność ze starszymi przeglądarkami, w których crypto.randomUUID() nie istnieje.
+  function makeUUID() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    const bytes = new Uint8Array(16);
+    if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  }
   const bassGainDb = value => (Math.min(Number(value) || 0, isPremium ? 250 : 75) / (isPremium ? 250 : 75)) * (isPremium ? 24 : 18);
 
   const msg = (id, text, error = false) => { const el = $(id); if (el) { el.textContent = text; el.style.color = error ? "#ff9baf" : "#8df0c2"; } };
@@ -452,7 +468,7 @@
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100);
-        const objectPath = `${playlist.id}/${crypto.randomUUID()}-${safeName}`;
+        const objectPath = `${playlist.id}/${makeUUID()}-${safeName}`;
         uploadStage = "wysyłanie pliku do Storage";
         msg("owner-message", `Wysyłam plik ${i + 1}/${files.length}…`);
         const { error: uploadError } = await db.storage.from("music").upload(objectPath, file, { contentType: file.type || "application/octet-stream", upsert: false });
