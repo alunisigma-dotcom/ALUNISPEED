@@ -14,3 +14,15 @@ body{background:radial-gradient(ellipse at 15% 0%,#3a205f 0,transparent 34%),rad
 
 .audio-file-input{display:block;margin-top:12px;max-width:100%;color:#d9c9f4;font-size:13px}
 .file-label{display:inline-block;cursor:pointer}
+
+
+/* OWNER workspace + shared playlists */
+.count{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;margin-left:6px;border-radius:20px;background:#d9b0ff;color:#21102f;font-size:10px}
+.owner-theme{background:radial-gradient(ellipse at 12% 0%,#59347a 0,transparent 38%),radial-gradient(ellipse at 90% 8%,#6b4a20 0,transparent 28%),linear-gradient(135deg,#080710,#1b1028 55%,#090811)}
+.owner-theme .sidebar{background:linear-gradient(180deg,#1a1026,#0b0811);border-color:#77508d}
+.owner-theme .brand span,.owner-heading h1 span{color:#f0c879}
+.owner-theme .panel{border-color:#73538b}
+.owner-theme #owner-nav{background:linear-gradient(100deg,#38234d,#4a3421);color:#ffe4ad;border:1px solid #9d7846}
+.owner-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(230px,1fr);gap:16px}
+.owner-form{display:grid;gap:13px;margin-top:18px}.owner-form label{display:grid;gap:7px;color:#d9cce9;font-size:12px;font-weight:600}.owner-form input:not([type=file]){width:100%;background:#0d0b14;border:1px solid var(--line);border-radius:10px;padding:12px;color:white;font:14px 'DM Sans'}.owner-form input[type=file]{max-width:100%;color:#ddd1f4;font-size:12px}.owner-crown{font-size:76px;text-align:center;color:#f0c879;text-shadow:0 0 38px #d49a4a66;padding:18px}.card-top,.notification-card,.track-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.notification-list,.track-list{display:grid;gap:10px}.notification-card,.track-row{padding:15px;border:1px solid var(--line);border-radius:13px;background:#171221}.notification-card.unread{border-color:#9c6ac4;background:linear-gradient(120deg,#241733,#171221)}.notification-card p{margin:7px 0;color:var(--muted);font-size:13px}.notification-actions{flex-shrink:0}.playlist-detail{grid-column:1/-1}.playlist-detail h2{margin:8px 0 15px}.track-row{flex-wrap:wrap}.track-meta{display:grid;gap:4px;min-width:160px}.track-row label{display:grid;gap:4px;min-width:150px;color:var(--muted)}.track-row input[type=range]{margin:5px 0}.playlist-detail .control-block{margin-bottom:14px}.playlist-detail .control-block label{display:flex;justify-content:space-between;color:var(--muted)}.playlist-detail .control-block input{max-width:100%}
+@media(max-width:850px){.owner-grid{grid-template-columns:1fr}.notification-card{align-items:flex-start;flex-direction:column}.notification-actions{width:100%}}

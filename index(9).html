@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d0b16"><title>ALUNISPEED</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="https://w.soundcloud.com/player/api.js"></script>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="#"><b>A</b> ALUNI<span>SPEED</span></a><p class="eyebrow">YOUR MUSIC. YOUR SPEED.</p>
+    <nav>
+      <button class="nav-btn active" data-view="home">♫ <span>Odtwarzacz</span></button>
+    </nav>
+    <div class="side-note"><strong>FREE</strong><p>Limit: 15 utworów dziennie (do skonfigurowania w backendzie).</p></div>
+    <div class="account"><div id="user-label">Niezalogowano</div><button id="logout-btn" class="ghost hidden">Wyloguj</button></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><span><i></i> MUSIC WORKSPACE</span><button id="auth-open" class="button small">Zaloguj / Zarejestruj</button></header>
+    <section id="auth-panel" class="panel auth-panel">
+      <div><p class="eyebrow">TWOJE KONTO</p><h2>Dołącz do ALUNISPEED</h2><p class="muted">Zaloguj się, aby korzystać z konta ALUNISPEED.</p></div>
+      <form id="auth-form">
+        <input id="email" type="email" placeholder="Adres e-mail" autocomplete="email" required>
+        <input id="password" type="password" placeholder="Hasło (min. 6 znaków)" minlength="6" required>
+        <div class="auth-actions"><button class="button" type="submit">Zaloguj</button><button class="button outline" type="button" id="signup-btn">Utwórz konto</button></div>
+        <p id="auth-message" class="message"></p>
+      </form>
+    </section>
+    <section id="home-view" class="view">
+      <div class="hero"><div><p class="eyebrow">ALUNISPEED PLAYER</p><h1>Twoja muzyka.<br><span>Twoje tempo.</span></h1><p class="muted">Dodaj własny plik audio i dostosuj jego brzmienie.</p></div><div class="orb">♫</div></div>
+      <section class="panel add-panel">
+        <p class="eyebrow">LOCAL MUSIC</p>
+        <h2>Dodaj własny plik audio</h2>
+        <p class="muted">Wybierz plik audio z urządzenia. Możesz regulować tempo i bas podczas odtwarzania w ALUNISPEED.</p>
+        <label class="button file-label" for="audio-file">Wybierz plik audio</label>
+        <input id="audio-file" class="audio-file-input" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus">
+        <p id="player-message" class="message" aria-live="polite"></p>
+      </section>
+      <section class="player-layout">
+        <div class="panel player-panel">
+          <div class="section-heading"><div><p class="eyebrow">NOW PLAYING</p><h2 id="track-title">Nic nie jest odtwarzane</h2></div><span id="source-pill" class="pill">GOTOWY</span></div>
+          <div id="embed-container" class="embed-container"><div class="empty-state"><div>♫</div><p>Wybierz własny plik audio</p></div></div>
+          <div id="local-controls" class="hidden">
+            <audio id="audio-player" controls></audio>
+            <div class="control-block"><label>Prędkość <strong id="speed-value">1.00×</strong></label><input id="speed-range" type="range" min=".5" max="2" step=".05" value="1"><div class="presets"><button data-speed=".75">0.75× Slowed</button><button data-speed=".85">0.85×</button><button data-speed="1">1.00× Normal</button><button data-speed="1.25">1.25×</button><button data-speed="1.5">1.50× Speed up</button></div></div>
+            <div class="control-block bass-block"><label for="bass-range">Bass Boost <strong id="bass-value">0%</strong> <span id="bass-tier" class="muted tiny">FREE: do 75%</span></label><input id="bass-range" type="range" min="0" max="75" step="1" value="0"><div class="bass-meter"><span>0%</span><span>75% — mocny bas</span><span>250% Premium</span></div><p id="bass-warning" class="warning hidden" role="alert">⚠️ Bass Boost powyżej 75% może powodować zniekształcenia i zwiększać obciążenie słuchu. Zmniejsz głośność i zachowaj ostrożność.</p><button id="bass-reset" class="button outline reset">Reset basu</button></div>
+          </div>
+          <div class="player-footer"><span id="speed-note" class="muted tiny">Regulacja prędkości i basu działa dla własnych plików audio.</span></div>
+        </div>
+        <aside class="panel quick-panel"><p class="eyebrow">VIP AUDIO</p><h2>Sound controls</h2><p class="muted">Efekty audio działają na plikach odtwarzanych wewnątrz tej strony. Nie zmieniają dźwięku innych aplikacji ani całego systemu.</p></aside>
+      </section>
+    </section>
+    <footer>ALUNISPEED • Projekt demonstracyjny. Korzystaj z muzyki zgodnie z prawami autorskimi i regulaminami serwisów.</footer>
+  </main>
+</div></div>
+<script src="config.js"></script><script src="app.js"></script>
+</body></html>

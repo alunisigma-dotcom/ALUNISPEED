@@ -1,131 +1,165 @@
 (() => {
   const $ = id => document.getElementById(id);
+  const OWNER_EMAIL = "alunisigma@gmail.com";
   const cfg = window.ALUNISPEED_CONFIG || {};
-  const configured = cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY &&
-    !cfg.SUPABASE_URL.startsWith("WKLEJ_") && !cfg.SUPABASE_ANON_KEY.startsWith("WKLEJ_");
-  const db = configured && window.supabase ? window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY) : null;
-  let user=null, localUrl=null, isPremium=false;
-  let audioCtx=null, sourceNode=null, bassFilter=null, audioGain=null, mediaSource=null, compressor=null;
+  const configured = /^https:\/\/.+\.supabase\.co$/.test(cfg.SUPABASE_URL || "") && !!cfg.SUPABASE_ANON_KEY && !String(cfg.SUPABASE_ANON_KEY).includes("YOUR_PUBLIC_KEY");
+  const db = configured && window.supabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
+  let user = null, isOwner = false, isPremium = false, localUrl = null, activePlaylistId = null, notificationChannel = null;
+  let audioCtx = null, bassFilter = null, mediaSource = null, compressor = null;
 
-  const msg=(id,text,error=false)=>{ $(id).textContent=text; $(id).style.color=error?"#ff9baf":"#8df0c2"; };
-  const setUser=()=>{$("user-label").textContent=user?user.email:"Niezalogowano";$("logout-btn").classList.toggle("hidden",!user);$("auth-open").classList.toggle("hidden",!!user);$("auth-panel").classList.toggle("hidden",!!user);};
-  const needDb=()=>{if(!db){msg("auth-message","Skonfiguruj Supabase w config.js — zobacz README.md.",true);return false;}return true;};
-
-  async function auth(mode){
-    if(!needDb())return;
-    const email=$("email").value.trim(),password=$("password").value;
-    if(mode==="signup"){
-      const {error}=await db.auth.signUp({email,password});
-      msg("auth-message",error?error.message:"Konto utworzone. Sprawdź e-mail, jeśli wymagane jest potwierdzenie.");
-    }else{
-      const {data,error}=await db.auth.signInWithPassword({email,password});
-      if(error)msg("auth-message",error.message,true);else{user=data.user;setUser();}
-    }
+  const msg = (id, text, error = false) => { const el = $(id); if (el) { el.textContent = text; el.style.color = error ? "#ff9baf" : "#8df0c2"; } };
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const needDb = () => { if (!db) { msg("auth-message", "Sprawdź config.js: Project URL i klucz Publishable.", true); return false; } return true; };
+  function showView(view) {
+    ["home", "library", "notifications", "owner"].forEach(v => $(v + "-view").classList.toggle("hidden", v !== view));
+    document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === view));
   }
-  $("auth-form").addEventListener("submit",e=>{e.preventDefault();auth("login");});
-  $("signup-btn").addEventListener("click",()=>auth("signup"));
-  $("logout-btn").addEventListener("click",async()=>{if(db)await db.auth.signOut();user=null;setUser();});
-  $("auth-open").addEventListener("click",()=>$("auth-panel").scrollIntoView({behavior:"smooth"}));
-  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-  document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>{["home","library"].forEach(v=>$(v+"-view").classList.toggle("hidden",v!==b.dataset.view));document.querySelectorAll(".nav-btn").forEach(x=>x.classList.toggle("active",x===b));}));
-  function stopLocal(){
-    $("audio-player").pause();
-    if(localUrl){URL.revokeObjectURL(localUrl);localUrl=null;}
-    $("audio-player").removeAttribute("src");
-    $("local-controls").classList.add("hidden");
-    $("embed-container").classList.remove("hidden");
-    $("bass-warning").classList.add("hidden");
+  function setUser() {
+    $("user-label").textContent = user ? user.email : "Niezalogowano";
+    $("logout-btn").classList.toggle("hidden", !user);
+    $("auth-open").classList.toggle("hidden", !!user);
+    $("auth-panel").classList.toggle("hidden", !!user);
+    $("owner-nav").classList.toggle("hidden", !isOwner);
+    $("plan-label").textContent = isOwner ? "OWNER • PREMIUM" : (isPremium ? "PREMIUM" : "FREE");
+    $("plan-note").textContent = isOwner ? "Bezterminowy dostęp właściciela." : "Odbieraj playlisty i słuchaj muzyki.";
+    if (isOwner) document.body.classList.add("owner-theme"); else document.body.classList.remove("owner-theme");
   }
-
-  async function setupAudioGraph(){
-    const audio=$("audio-player");
-    if(!audioCtx){
-      audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-      bassFilter=audioCtx.createBiquadFilter();bassFilter.type="lowshelf";bassFilter.frequency.value=120;
-      audioGain=audioCtx.createGain();
-      compressor=audioCtx.createDynamicsCompressor();
-      compressor.threshold.value=-18; compressor.knee.value=18;
-      compressor.ratio.value=2.5; compressor.attack.value=0.008; compressor.release.value=0.18;
-      mediaSource=audioCtx.createMediaElementSource(audio);
-      mediaSource.connect(bassFilter);bassFilter.connect(compressor);compressor.connect(audioGain);audioGain.connect(audioCtx.destination);
-    }
-    if(audioCtx.state==="suspended")await audioCtx.resume();
-  }
-  function setBass(value){
-    const max=isPremium?250:75;
-    const v=Math.min(Number(value),max);
-    $("bass-range").max=String(max);
-    $("bass-value").textContent=v+"%";
-    $("bass-tier").textContent=isPremium?"PREMIUM: do 250%":"FREE: do 75%";
-    // Bass percentage maps to a conservative maximum of +12 dB, not raw system volume.
-    if(bassFilter)bassFilter.gain.setTargetAtTime((v/max)*12,audioCtx.currentTime,0.08);
-    $("bass-warning").classList.toggle("hidden",v<=75);
-    if(v>75) $("bass-warning").textContent="⚠️ Mocny Bass Boost może zniekształcać dźwięk i zwiększać obciążenie słuchu. Zmniejsz głośność urządzenia.";
-  }
-  $("bass-range").addEventListener("input",e=>setBass(e.target.value));
-  $("bass-reset").addEventListener("click",()=>{$("bass-range").value=0;setBass(0);});
-  $("speed-range").addEventListener("input",e=>{const v=Number(e.target.value);$("speed-value").textContent=v.toFixed(2)+"×";$("audio-player").playbackRate=v;});
-  document.querySelectorAll("[data-speed]").forEach(b=>b.addEventListener("click",()=>{$("speed-range").value=b.dataset.speed;$("speed-range").dispatchEvent(new Event("input"));}));
-
-  $("audio-file").addEventListener("change", async e=>{
-    const file=e.target.files && e.target.files[0];
-    if(!file) return;
-
-    const looksLikeAudio = file.type.startsWith("audio/") ||
-      /\\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(file.name);
-    if(!looksLikeAudio){
-      msg("player-message","Ten plik nie wygląda na plik audio. Wybierz MP3, WAV, OGG, M4A, AAC, FLAC lub OPUS.",true);
-      e.target.value="";
-      return;
-    }
-
-    const audio=$("audio-player");
-    try{
-      stopLocal();
-      localUrl=URL.createObjectURL(file);
-      audio.src=localUrl;
-      audio.load();
-
-      $("track-title").textContent=file.name;
-      $("source-pill").textContent="LOCAL AUDIO";
-      $("embed-container").classList.add("hidden");
-      $("local-controls").classList.remove("hidden");
-      $("speed-range").value="1";
-      $("speed-value").textContent="1.00×";
-      audio.playbackRate=1;
-      $("bass-range").value="0";
-      $("bass-value").textContent="0%";
-      $("bass-warning").classList.add("hidden");
-
-      // Build the Web Audio graph only once. If Web Audio is unavailable,
-      // native audio playback still works.
-      try{
-        await setupAudioGraph();
-      }catch(graphError){
-        console.warn("Audio effects unavailable; using native playback.",graphError);
+  async function auth(mode) {
+    if (!needDb()) return;
+    const email = $("email").value.trim(), password = $("password").value;
+    try {
+      if (mode === "signup") {
+        const { error } = await db.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
+        msg("auth-message", error ? error.message : "Konto utworzone. Sprawdź e-mail, aby potwierdzić rejestrację.", !!error);
+      } else {
+        const { data, error } = await db.auth.signInWithPassword({ email, password });
+        if (error) msg("auth-message", error.message, true); else await applySession(data.user);
       }
+    } catch (e) { msg("auth-message", e.message || "Nie udało się połączyć z Supabase.", true); }
+  }
+  async function applySession(nextUser) {
+    user = nextUser || null;
+    isOwner = !!user && user.email?.toLowerCase() === OWNER_EMAIL;
+    isPremium = isOwner;
+    setUser();
+    if (!user || !db) return;
+    try {
+      await db.from("profiles").upsert({ id: user.id, email: user.email }, { onConflict: "id" });
+      await Promise.all([loadPlaylists(), loadNotifications()]);
+      if (notificationChannel) await db.removeChannel(notificationChannel);
+      notificationChannel = db.channel("alunispeed-notifications-" + user.id)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: "recipient_user_id=eq." + user.id }, () => loadNotifications())
+        .subscribe();
+    } catch (e) { console.error(e); }
+  }
+  $("auth-form").addEventListener("submit", e => { e.preventDefault(); auth("login"); });
+  $("signup-btn").addEventListener("click", () => auth("signup"));
+  $("logout-btn").addEventListener("click", async () => { if (db) { if (notificationChannel) await db.removeChannel(notificationChannel); await db.auth.signOut(); } notificationChannel = null; user = null; isOwner = false; isPremium = false; setUser(); showView("home"); });
+  $("auth-open").addEventListener("click", () => $("auth-panel").scrollIntoView({ behavior: "smooth" }));
+  document.querySelectorAll(".nav-btn").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
 
-      try{
-        await audio.play();
-        msg("player-message","Plik załadowany i odtwarzany. Jeśli nie słyszysz dźwięku, sprawdź głośność i Play.");
-      }catch(playError){
-        msg("player-message","Plik został załadowany. Naciśnij Play w odtwarzaczu, aby rozpocząć.",false);
-      }
-    }catch(err){
-      console.error(err);
-      msg("player-message","Nie udało się załadować tego pliku. Spróbuj MP3 lub WAV.",true);
+  async function setupAudioGraph() {
+    const audio = $("audio-player");
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      bassFilter = audioCtx.createBiquadFilter(); bassFilter.type = "lowshelf"; bassFilter.frequency.value = 120;
+      compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -18; compressor.knee.value = 18; compressor.ratio.value = 2.5;
+      mediaSource = audioCtx.createMediaElementSource(audio);
+      mediaSource.connect(bassFilter); bassFilter.connect(compressor); compressor.connect(audioCtx.destination);
     }
+    if (audioCtx.state === "suspended") await audioCtx.resume();
+  }
+  function applyBass(value) {
+    const max = isPremium ? 250 : 75, v = Math.min(Number(value), max);
+    $("bass-range").max = String(max); $("bass-value").textContent = v + "%";
+    if (bassFilter && audioCtx) bassFilter.gain.setTargetAtTime((v / max) * 9, audioCtx.currentTime, .08);
+    $("bass-warning").classList.toggle("hidden", v <= 75);
+  }
+  $("bass-range").addEventListener("input", e => applyBass(e.target.value));
+  $("speed-range").addEventListener("input", e => { const v = Number(e.target.value); $("speed-value").textContent = v.toFixed(2) + "×"; $("audio-player").playbackRate = v; });
+  document.querySelectorAll("[data-speed]").forEach(b => b.addEventListener("click", () => { $("speed-range").value = b.dataset.speed; $("speed-range").dispatchEvent(new Event("input")); }));
+  async function playUrl(url, title, bass = 0) {
+    const audio = $("audio-player");
+    if (localUrl) { URL.revokeObjectURL(localUrl); localUrl = null; }
+    audio.src = url; audio.load(); $("track-title").textContent = title; $("source-pill").textContent = "ALUNISPEED MUSIC";
+    $("embed-container").classList.add("hidden"); $("local-controls").classList.remove("hidden");
+    $("speed-range").value = "1"; $("speed-value").textContent = "1.00×"; audio.playbackRate = 1;
+    $("bass-range").value = String(bass); await setupAudioGraph(); applyBass(bass);
+    try { await audio.play(); msg("player-message", "Odtwarzanie: " + title); }
+    catch { msg("player-message", "Utwór gotowy. Naciśnij Play w odtwarzaczu."); }
+  }
+  $("audio-file").addEventListener("change", async e => {
+    const file = e.target.files?.[0]; if (!file) return;
+    if (!(file.type.startsWith("audio/") || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(file.name))) { msg("player-message", "Wybierz plik audio.", true); return; }
+    localUrl = URL.createObjectURL(file);
+    try { await playUrl(localUrl, file.name); $("source-pill").textContent = "LOCAL AUDIO"; }
+    catch (err) { console.error(err); msg("player-message", "Nie udało się odtworzyć pliku.", true); }
   });
-  const premiumInfoButton=$("premium-info-btn");
-  if(premiumInfoButton){
-    premiumInfoButton.addEventListener("click",()=>{
-      const premiumMessage=$("premium-message");
-      if(premiumMessage) msg("premium-message","Premium i płatności nie są jeszcze aktywne. Na razie działa odtwarzanie własnych plików audio.");
-    });
+
+  async function loadPlaylists() {
+    if (!user) return;
+    const { data, error } = await db.from("playlists").select("id,name,owner_id,created_at").order("created_at", { ascending: false });
+    if (error) { console.error(error); $("playlist-list").innerHTML = `<p class="muted">${esc(error.message)}</p>`; return; }
+    if (!data?.length) { $("playlist-list").innerHTML = '<p class="muted">Nie masz jeszcze playlist. Gdy OWNER coś Ci wyśle, pojawi się tutaj.</p>'; return; }
+    $("playlist-list").innerHTML = data.map(p => `<article class="playlist-card"><div class="card-top"><span class="eyebrow">ALUNISPEED PLAYLIST</span><span class="pill">${p.owner_id === user.id ? "WŁASNA" : "OTRZYMANA"}</span></div><h3>${esc(p.name)}</h3><p>Otwórz, aby zobaczyć utwory i ustawienia basu.</p><button class="button small" data-open-playlist="${p.id}">Otwórz playlistę</button></article>`).join("");
+    document.querySelectorAll("[data-open-playlist]").forEach(b => b.addEventListener("click", () => openPlaylist(b.dataset.openPlaylist)));
+  }
+  async function openPlaylist(id) {
+    const { data: playlist, error } = await db.from("playlists").select("id,name,owner_id").eq("id", id).single();
+    if (error) { msg("player-message", error.message, true); return; }
+    const { data: items, error: itemError } = await db.from("playlist_items").select("id,title,object_path,mime_type,position").eq("playlist_id", id).order("position");
+    if (itemError) { msg("player-message", itemError.message, true); return; }
+    const { data: setting } = await db.from("user_playlist_settings").select("bass_percent").eq("user_id", user.id).eq("playlist_id", id).maybeSingle();
+    const playlistBass = setting?.bass_percent ?? 0;
+    $("playlist-list").innerHTML = `<div class="playlist-detail"><button class="ghost" id="back-library">← Wróć do playlist</button><p class="eyebrow">PLAYLIST</p><h2>${esc(playlist.name)}</h2><div class="control-block"><label>Bas całej playlisty <strong>${playlistBass}%</strong></label><input id="playlist-bass" type="range" min="0" max="${isPremium ? 250 : 75}" value="${playlistBass}"/><button class="button outline small" id="save-playlist-bass">Zapisz bas playlisty</button></div><div id="playlist-track-list" class="track-list"></div></div>`;
+    $("back-library").addEventListener("click", loadPlaylists);
+    $("save-playlist-bass").addEventListener("click", async () => { const v = Number($("playlist-bass").value); const { error } = await db.from("user_playlist_settings").upsert({ user_id: user.id, playlist_id: id, bass_percent: v }, { onConflict: "user_id,playlist_id" }); msg("player-message", error ? error.message : "Zapisano bas playlisty.", !!error); });
+    if (!items?.length) { $("playlist-track-list").innerHTML = '<p class="muted">Ta playlista nie ma jeszcze utworów.</p>'; return; }
+    const { data: settings } = await db.from("user_track_settings").select("playlist_item_id,bass_percent").eq("user_id", user.id).in("playlist_item_id", items.map(x => x.id));
+    const byItem = Object.fromEntries((settings || []).map(x => [x.playlist_item_id, x.bass_percent]));
+    $("playlist-track-list").innerHTML = items.map((t, i) => `<div class="track-row"><div class="track-meta"><b>${i + 1}. ${esc(t.title)}</b><span class="muted tiny">${esc(t.mime_type || "Audio")}</span></div><label class="tiny">Bas utworu <input type="range" min="0" max="${isPremium ? 250 : 75}" value="${byItem[t.id] ?? playlistBass}" data-track-bass="${t.id}"></label><button class="button small" data-play-track="${t.id}">▶ Odtwórz</button></div>`).join("");
+    document.querySelectorAll("[data-track-bass]").forEach(slider => slider.addEventListener("change", async () => { const { error } = await db.from("user_track_settings").upsert({ user_id: user.id, playlist_item_id: slider.dataset.trackBass, bass_percent: Number(slider.value) }, { onConflict: "user_id,playlist_item_id" }); if (error) msg("player-message", error.message, true); }));
+    document.querySelectorAll("[data-play-track]").forEach(b => b.addEventListener("click", async () => { const item = items.find(x => x.id === b.dataset.playTrack); const v = Number(document.querySelector(`[data-track-bass="${item.id}"]`).value); const { data: signed, error } = await db.storage.from("music").createSignedUrl(item.object_path, 3600); if (error) { msg("player-message", error.message, true); return; } try { await playUrl(signed.signedUrl, item.title, v); } catch (e) { msg("player-message", e.message, true); } }));
+    activePlaylistId = id; showView("library");
   }
 
-  if(db){
-    db.auth.getSession().then(({data})=>{user=data.session?.user||null;setUser();});
-    db.auth.onAuthStateChange((_event,session)=>{user=session?.user||null;setUser();});
-  }else{setUser();msg("auth-message","Tryb podglądu: dodaj dane Supabase w config.js, aby włączyć konta.");}
+  async function loadNotifications() {
+    if (!user) return;
+    const { data, error } = await db.from("notifications").select("id,message,playlist_id,read_at,created_at").order("created_at", { ascending: false }).limit(30);
+    if (error) { console.error(error); return; }
+    const unread = (data || []).filter(n => !n.read_at).length;
+    $("notification-count").textContent = unread; $("notification-count").classList.toggle("hidden", unread === 0);
+    $("notification-list").innerHTML = data?.length ? data.map(n => `<article class="notification-card ${n.read_at ? "read" : "unread"}"><div><b>${n.read_at ? "Powiadomienie" : "✦ Nowe powiadomienie"}</b><p>${esc(n.message)}</p><span class="tiny muted">${new Date(n.created_at).toLocaleString("pl-PL")}</span></div><div class="notification-actions">${n.playlist_id ? `<button class="button small" data-notif-open="${n.id}" data-playlist="${n.playlist_id}">Otwórz playlistę</button>` : ""}</div></article>`).join("") : '<p class="muted">Nie masz nowych powiadomień.</p>';
+    document.querySelectorAll("[data-notif-open]").forEach(b => b.addEventListener("click", async () => { await db.from("notifications").update({ read_at: new Date().toISOString() }).eq("id", b.dataset.notifOpen); await loadNotifications(); showView("library"); await openPlaylist(b.dataset.playlist); }));
+  }
+
+  $("send-playlist-form").addEventListener("submit", async e => {
+    e.preventDefault(); if (!isOwner || !user) { msg("owner-message", "Brak uprawnień OWNER.", true); return; }
+    const name = $("owner-playlist-name").value.trim(), email = $("recipient-email").value.trim().toLowerCase(), files = [...$("owner-audio-files").files];
+    if (!files.length) { msg("owner-message", "Wybierz co najmniej jeden plik.", true); return; }
+    if (files.some(f => !(f.type.startsWith("audio/") || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(f.name)))) { msg("owner-message", "Wszystkie pliki muszą być plikami audio.", true); return; }
+    msg("owner-message", "Sprawdzam odbiorcę…");
+    try {
+      const { data: recipient, error: findError } = await db.from("profiles").select("id,email").eq("email", email).maybeSingle();
+      if (findError) throw findError; if (!recipient) throw new Error("Nie znaleziono zarejestrowanego użytkownika o takim e-mailu.");
+      const { data: playlist, error: pError } = await db.from("playlists").insert({ owner_id: user.id, user_id: user.id, name }).select("id").single(); if (pError) throw pError;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i], safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100), objectPath = `${playlist.id}/${crypto.randomUUID()}-${safeName}`;
+        msg("owner-message", `Wysyłam plik ${i + 1}/${files.length}…`);
+        const { error: uploadError } = await db.storage.from("music").upload(objectPath, file, { contentType: file.type || "application/octet-stream", upsert: false }); if (uploadError) throw uploadError;
+        const { error: itemError } = await db.from("playlist_items").insert({ playlist_id: playlist.id, title: file.name, object_path: objectPath, mime_type: file.type || "audio", position: i }); if (itemError) throw itemError;
+      }
+      const { error: shareError } = await db.from("playlist_shares").insert({ playlist_id: playlist.id, recipient_user_id: recipient.id, shared_by: user.id }); if (shareError) throw shareError;
+      const { error: noteError } = await db.from("notifications").insert({ recipient_user_id: recipient.id, playlist_id: playlist.id, message: `Otrzymałeś nową playlistę „${name}” od ALUNISPEED.` }); if (noteError) throw noteError;
+      msg("owner-message", `Gotowe! Playlista „${name}” została wysłana do ${email}.`); $("send-playlist-form").reset();
+    } catch (err) { console.error(err); msg("owner-message", err.message || "Nie udało się wysłać playlisty.", true); }
+  });
+
+  async function init() {
+    if (!db) { setUser(); msg("auth-message", "Uzupełnij config.js danymi Supabase.", true); return; }
+    const { data, error } = await db.auth.getSession(); if (error) console.error(error);
+    await applySession(data.session?.user || null);
+    db.auth.onAuthStateChange((_event, session) => { applySession(session?.user || null); });
+  }
+  init();
 })();
