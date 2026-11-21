@@ -78,22 +78,53 @@
   $("bass-range").addEventListener("input", e => applyBass(e.target.value));
   $("speed-range").addEventListener("input", e => { const v = Number(e.target.value); $("speed-value").textContent = v.toFixed(2) + "×"; $("audio-player").playbackRate = v; });
   document.querySelectorAll("[data-speed]").forEach(b => b.addEventListener("click", () => { $("speed-range").value = b.dataset.speed; $("speed-range").dispatchEvent(new Event("input")); }));
-  async function playUrl(url, title, bass = 0) {
+  async function playUrl(url, title, bass = 0, blobUrl = null) {
     const audio = $("audio-player");
-    if (localUrl) { URL.revokeObjectURL(localUrl); localUrl = null; }
-    audio.src = url; audio.load(); $("track-title").textContent = title; $("source-pill").textContent = "ALUNISPEED MUSIC";
-    $("embed-container").classList.add("hidden"); $("local-controls").classList.remove("hidden");
-    $("speed-range").value = "1"; $("speed-value").textContent = "1.00×"; audio.playbackRate = 1;
-    $("bass-range").value = String(bass); await setupAudioGraph(); applyBass(bass);
-    try { await audio.play(); msg("player-message", "Odtwarzanie: " + title); }
-    catch { msg("player-message", "Utwór gotowy. Naciśnij Play w odtwarzaczu."); }
+    // Release only the previous local file. Do not revoke the URL we are about to play.
+    if (localUrl && localUrl !== blobUrl) URL.revokeObjectURL(localUrl);
+    localUrl = blobUrl;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    audio.src = url;
+    audio.load();
+    $("track-title").textContent = title;
+    $("source-pill").textContent = blobUrl ? "LOCAL AUDIO" : "ALUNISPEED MUSIC";
+    $("embed-container").classList.add("hidden");
+    $("local-controls").classList.remove("hidden");
+    $("speed-range").value = "1";
+    $("speed-value").textContent = "1.00×";
+    audio.playbackRate = 1;
+    $("bass-range").value = String(bass);
+    // Audio effects are optional: failure to create Web Audio must not prevent normal playback.
+    try { await setupAudioGraph(); applyBass(bass); }
+    catch (effectError) { console.warn("Efekty audio niedostępne; odtwarzam bez EQ.", effectError); }
+    try {
+      await audio.play();
+      msg("player-message", "Odtwarzanie: " + title);
+    } catch (playError) {
+      console.warn("Autoplay zablokowany lub format nieobsługiwany.", playError);
+      msg("player-message", "Plik załadowany. Naciśnij Play. Jeśli nadal nie działa, spróbuj przekonwertować plik do MP3.");
+    }
   }
   $("audio-file").addEventListener("change", async e => {
-    const file = e.target.files?.[0]; if (!file) return;
-    if (!(file.type.startsWith("audio/") || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(file.name))) { msg("player-message", "Wybierz plik audio.", true); return; }
-    localUrl = URL.createObjectURL(file);
-    try { await playUrl(localUrl, file.name); $("source-pill").textContent = "LOCAL AUDIO"; }
-    catch (err) { console.error(err); msg("player-message", "Nie udało się odtworzyć pliku.", true); }
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!(file.type.startsWith("audio/") || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(file.name))) {
+      msg("player-message", "Wybierz plik audio (MP3, WAV, OGG, M4A lub FLAC).", true);
+      e.target.value = "";
+      return;
+    }
+    const blobUrl = URL.createObjectURL(file);
+    try {
+      await playUrl(blobUrl, file.name, 0, blobUrl);
+      $("source-pill").textContent = "LOCAL AUDIO";
+    } catch (err) {
+      console.error(err);
+      URL.revokeObjectURL(blobUrl);
+      localUrl = null;
+      msg("player-message", "Nie udało się załadować pliku. Spróbuj innego MP3 lub WAV.", true);
+    }
   });
 
   async function loadPlaylists() {
